@@ -16,9 +16,19 @@ import xml.etree.ElementTree as ET
 warnings.filterwarnings('ignore', category=InsecureRequestWarning)
 
 #definizione delle variabili globali
-BASE_URL = "https://qualysguard.qg2.apps.qualys.eu"
+BASE_URL = "API_URL"
 AUTH = ("USERNAME", "PASSWORD")
 REPORTIR = ""
+OPTION_PROFILE_ID = {
+    "INTERNAL": "4008187",
+    "EXTERNAL": "4008184",
+}
+ASSETS_GROUP_ID = {
+    "INTERNAL": "6985420", # ALL-IP_INTERNAL_UPDATE-09102023
+    "EXTERNAL": "7035486", # AG_ALL-IP_EXTERNAL_UPDATE_20122023
+}
+EXCLUDED_IPS = [   
+]
 
 HEADERS = {
     "X-Requested-With": "Curl",
@@ -190,7 +200,7 @@ def update_OptionProfie_External(auth, static_list_id):
         "title": f"OP_{REPORTIR}_EXTERNAL",
         "vulnerability_detection": "custom",
         "custom_search_list_ids": [static_list_id],
-        "id": "4008184",
+        "id": f"{OPTION_PROFILE_ID['EXTERNAL']}",
     }
 
     response = make_request("POST", full_url, data=data, auth=auth)
@@ -212,7 +222,7 @@ def update_OptionProfie_Internal(auth, static_list_id):
         "title": f"OP_{REPORTIR}_INTERNAL",
         "vulnerability_detection": "custom",
         "custom_search_list_ids": [static_list_id],
-        "id": "4008187",
+        "id": f"{OPTION_PROFILE_ID['INTERNAL']}",
     }
 
     response = make_request("POST", full_url, data=data, auth=auth)
@@ -224,6 +234,63 @@ def update_OptionProfie_Internal(auth, static_list_id):
     else:
         print(f"Errore nella richiesta HTTP: {response.status_code}")
         return None
+#funzione per confermare il lancio della scansione    
+def confirm_scan_launch():
+    while True:
+        choice = input("Vuoi lanciare la scansione? (sì/no): ").lower()
+        if choice in ['sì', 'si']:
+            return True
+        elif choice in ['no']:
+            return False
+        else:
+            print("Risposta non valida. Per favore, inserisci 'sì' o 'no'.")
+            
+#funzione per lanciare la scansione interna
+def launch_scan_internal(auth):
+    endpoint = "/api/2.0/fo/scan/"
+    full_url = f"{BASE_URL}{endpoint}"
+    data = {
+        "action": "launch",
+        "scan_title": f"Scan_{REPORTIR}_INTERNAL",
+        "option_id": f"{OPTION_PROFILE_ID['INTERNAL']}",
+        "target_from" : "assets",
+        "scanners_in_ag" : "1",
+        "asset_group_ids" : f"{ASSETS_GROUP_ID['INTERNAL']}",
+        "priority" : "0",
+        "exclude_ip_per_scan" : ",".join(EXCLUDED_IPS),
+        }
+    response = make_request("POST", full_url, data=data, auth=auth)
+
+    if response.status_code == 200:
+        root = ET.fromstring(response.content)
+        scanId = root.find(".//ITEM[KEY='ID']/VALUE")
+        print(f"Scansione interna lanciata con successo con ID: {scanId.text}")
+        return scanId.text if scanId is not None else None
+    else:
+        print(f"Errore nella richiesta HTTP: {response.status_code}")
+    return None
+#funzione che lancia la scansione esterna
+def launch_scan_external(auth):
+    endpoint = "/api/2.0/fo/scan/"
+    full_url = f"{BASE_URL}{endpoint}"
+    data = {
+        "action": "launch",
+        "scan_title": f"Scan_{REPORTIR}_EXTERNAL",
+        "option_id": f"{OPTION_PROFILE_ID['EXTERNAL']}",
+        "target_from" : "assets",
+        "asset_group_ids" : f"{ASSETS_GROUP_ID['EXTERNAL']}",
+        "priority" : "0",
+        }
+    response = make_request("POST", full_url, data=data, auth=auth)
+
+    if response.status_code == 200:
+        root = ET.fromstring(response.content)
+        scanId = root.find(".//ITEM[KEY='ID']/VALUE")
+        print(f"Scansione esterna lanciata con successo con ID: {scanId.text}")
+        return scanId.text if scanId is not None else None
+    else:
+        print(f"Errore nella richiesta HTTP: {response.status_code}")
+    return None
 
 #funzione per eseguire il codice
 if __name__ == "__main__":
@@ -253,3 +320,10 @@ if __name__ == "__main__":
 
     update_OptionProfie_External(AUTH, static_list_id)
     update_OptionProfie_Internal(AUTH, static_list_id)
+
+    if confirm_scan_launch():
+        launch_scan_internal(AUTH)
+        launch_scan_external(AUTH)
+    else:
+        print("Scansioni non lanciate.")
+        exit()
